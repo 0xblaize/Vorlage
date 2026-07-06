@@ -8,14 +8,19 @@ back as partials (interim) and finals; finals are accumulated until
 
 import asyncio
 import json
+import ssl
 import urllib.parse
 from collections.abc import Awaitable, Callable
 
+import certifi
 import websockets
 
 from app.config import settings
 
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen"
+
+# macOS python.org builds ship without system CA certs wired up; use certifi.
+_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 # on_transcript(text, is_final)
 TranscriptCallback = Callable[[str, bool], Awaitable[None]]
@@ -44,7 +49,9 @@ class DeepgramStream:
             additional_headers={
                 "Authorization": f"Token {settings.deepgram_api_key}"
             },
+            ssl=_SSL_CONTEXT,
         )
+        print(f"Deepgram connected (model={settings.stt_model})")
         self._receiver_task = asyncio.create_task(self._receive_loop())
 
     async def send(self, chunk: bytes) -> None:
@@ -57,9 +64,14 @@ class DeepgramStream:
             async for raw in self._ws:
                 msg = json.loads(raw)
                 if msg.get("type") != "Results":
+                    print(f"Deepgram message: {raw[:300]}")
                     continue
                 alt = msg["channel"]["alternatives"][0]
                 text = alt["transcript"].strip()
+                print(
+                    f"Deepgram transcript (final={msg.get('is_final')}, "
+                    f"speech_final={msg.get('speech_final')}): {text!r}"
+                )
 
                 if msg.get("is_final"):
                     if text:
@@ -71,8 +83,8 @@ class DeepgramStream:
                 elif text:
                     # Interim partial — powers the ghost nodes.
                     await self._on_transcript(text, False)
-        except websockets.ConnectionClosed:
-            pass
+        except websockets.ConnectionClosed as exc:
+            print(f"Deepgram stream closed: code={exc.code} reason={exc.reason!r}")
 
     async def close(self) -> None:
         if self._ws is not None:
