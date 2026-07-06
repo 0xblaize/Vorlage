@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   AudioLines,
@@ -18,6 +18,7 @@ import {
   Save,
   FolderOpen,
   Loader2,
+  Paperclip,
 } from 'lucide-react';
 import { FirmamentVisualizer } from '../components/ui/FirmamentVisualizer';
 import {
@@ -63,6 +64,10 @@ export default function Dashboard() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [referenceImages, setReferenceImages] = useState<
+    { id: string; name: string; dataUrl: string; file: File }[]
+  >([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { start, stop, sendReset, sendLoad } = useVoiceSession();
   const isRecording = useCanvasStore((s) => s.isRecording);
@@ -110,7 +115,39 @@ export default function Dashboard() {
   const handleNewSession = () => {
     sendReset();
     setCanvasOpen(false);
+    setReferenceImages([]);
     setGreeting(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
+  };
+
+  const handleAttachClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImagePicked = async (e: ChangeEvent<HTMLInputElement>) => {
+    const picked: File[] = e.target.files ? Array.from(e.target.files) : [];
+    const files = picked.filter((f) => f.type.startsWith('image/'));
+    e.target.value = '';
+    if (files.length === 0) return;
+    const readAsDataUrl = (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+        reader.readAsDataURL(file);
+      });
+    const added = await Promise.all(
+      files.map(async (file) => ({
+        id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
+        name: file.name,
+        dataUrl: await readAsDataUrl(file),
+        file,
+      })),
+    );
+    setReferenceImages((prev) => [...prev, ...added]);
+  };
+
+  const handleRemoveImage = (id: string) => {
+    setReferenceImages((prev) => prev.filter((img) => img.id !== id));
   };
 
   const handleSaveCanvas = async () => {
@@ -344,6 +381,41 @@ export default function Dashboard() {
                 )}
               </AnimatePresence>
 
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleImagePicked}
+                className="hidden"
+              />
+
+              {referenceImages.length > 0 && (
+                <div className="max-w-xl mx-auto mb-3 flex flex-wrap gap-2 justify-center">
+                  {referenceImages.map((img) => (
+                    <div
+                      key={img.id}
+                      className="relative group/thumb w-16 h-16 rounded-lg overflow-hidden border border-white/10 bg-white/5"
+                      title={img.name}
+                    >
+                      <img
+                        src={img.dataUrl}
+                        alt={img.name}
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveImage(img.id)}
+                        className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/70 text-white flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-opacity"
+                        aria-label={`Remove ${img.name}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="relative group flex justify-center max-w-xs mx-auto">
                 <div
                   className={`absolute -inset-2 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-[3rem] blur-xl opacity-20 group-hover:opacity-40 transition duration-500 ${
@@ -353,9 +425,9 @@ export default function Dashboard() {
                 <div className="relative flex items-center justify-between gap-4 md:gap-6 bg-[#17181c] border border-white/10 rounded-[3rem] shadow-2xl px-4 md:px-6 py-2 md:py-3 transition-colors w-full">
                   <button
                     type="button"
-                    onClick={handleNewSession}
+                    onClick={handleAttachClick}
                     className="p-3 text-slate-400 hover:text-indigo-400 transition-colors rounded-full hover:bg-white/5"
-                    title="New session"
+                    title="Upload reference image"
                   >
                     <Plus className="w-6 h-6" />
                   </button>
