@@ -31,8 +31,9 @@ from app.service.stt import DeepgramStream
 class VoiceSession:
     """One connected client. Owns the STT stream and utterance state."""
 
-    def __init__(self, websocket: WebSocket) -> None:
+    def __init__(self, websocket: WebSocket, user_id: str) -> None:
         self.websocket = websocket
+        self.user_id = user_id
         self.ghosted_types: set[NodeType] = set()
         self.audio_bytes_received = 0
         self.graph = GraphUpdate()  # current canvas state for this session
@@ -97,7 +98,12 @@ class VoiceSession:
             )
             return
         try:
-            canvas = get_canvas(canvas_id)
+            canvas = get_canvas(self.user_id, canvas_id)
+        except KeyError:
+            await self.websocket.send_text(
+                ErrorMessage(detail="canvas not found").model_dump_json()
+            )
+            return
         except Exception as exc:
             await self.websocket.send_text(
                 ErrorMessage(detail=f"load failed: {exc}").model_dump_json()

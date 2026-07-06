@@ -15,6 +15,9 @@ import {
   Video,
   BookOpen,
   MessageSquare,
+  Save,
+  FolderOpen,
+  Loader2,
 } from 'lucide-react';
 import { FirmamentVisualizer } from '../components/ui/FirmamentVisualizer';
 import {
@@ -22,8 +25,11 @@ import {
   WorkspaceTab,
 } from '../components/workspace/SettingsWorkspace';
 import { Canvas } from '../components/canvas/Canvas';
+import { CanvasLibrary } from '../components/canvas/CanvasLibrary';
 import { useVoiceSession } from '../hooks/useVoiceSession';
 import { useCanvasStore, type ConnectionStatus } from '../store/canvasStore';
+import { saveCanvas } from '../lib/canvasApi';
+import { authClient } from '../lib/auth';
 
 const GREETINGS = [
   'What should we focus on?',
@@ -54,14 +60,26 @@ export default function Dashboard() {
     useState<WorkspaceTab>(null);
   const [greeting, setGreeting] = useState(GREETINGS[0]);
   const [canvasOpen, setCanvasOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  const { start, stop, sendReset } = useVoiceSession();
+  const { start, stop, sendReset, sendLoad } = useVoiceSession();
   const isRecording = useCanvasStore((s) => s.isRecording);
   const connection = useCanvasStore((s) => s.connection);
   const transcript = useCanvasStore((s) => s.transcript);
   const speechPayload = useCanvasStore((s) => s.speechPayload);
   const lastError = useCanvasStore((s) => s.lastError);
   const nodeCount = useCanvasStore((s) => s.nodes.length);
+  const nodes = useCanvasStore((s) => s.nodes);
+  const edges = useCanvasStore((s) => s.edges);
+  const highlightIds = useCanvasStore((s) => s.highlightIds);
+  const setError = useCanvasStore((s) => s.setError);
+  const session = authClient.useSession();
+  const user = session.data?.user;
+  const userInitial = (user?.name ?? user?.email ?? '?')
+    .slice(0, 1)
+    .toUpperCase();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -93,6 +111,29 @@ export default function Dashboard() {
     sendReset();
     setCanvasOpen(false);
     setGreeting(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]);
+  };
+
+  const handleSaveCanvas = async () => {
+    if (nodeCount === 0 || saving) return;
+    const suggested = `Canvas ${new Date().toLocaleString()}`;
+    const name = window.prompt('Name this canvas', suggested)?.trim();
+    if (!name) return;
+    setSaving(true);
+    setSaveMessage(null);
+    try {
+      await saveCanvas(name, {
+        nodes,
+        edges,
+        highlight_nodes: highlightIds,
+        speech_payload: speechPayload,
+      });
+      setSaveMessage(`Saved “${name}”`);
+      setTimeout(() => setSaveMessage(null), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const hasTranscript = Boolean(transcript.final || transcript.partial);
@@ -130,6 +171,27 @@ export default function Dashboard() {
 
         <div className="flex items-center gap-2 md:gap-4">
           <button
+            onClick={() => setLibraryOpen(true)}
+            className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-200 text-sm cursor-pointer"
+            title="Open canvas library"
+          >
+            <FolderOpen className="w-4 h-4" />
+            <span>Library</span>
+          </button>
+          <button
+            onClick={handleSaveCanvas}
+            disabled={nodeCount === 0 || saving}
+            className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-200 text-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            title={nodeCount === 0 ? 'Nothing to save yet' : 'Save canvas'}
+          >
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            <span>Save</span>
+          </button>
+          <button
             onClick={handleNewSession}
             className="hidden md:flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 transition-colors text-white font-medium text-sm shadow-lg shadow-indigo-500/20 cursor-pointer"
           >
@@ -154,9 +216,22 @@ export default function Dashboard() {
           </button>
           <button
             onClick={() => setActiveWorkspaceTab('profile')}
-            className="w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center hover:bg-indigo-500/40 active:bg-indigo-500/50 transition-colors cursor-pointer"
+            className="w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center hover:bg-indigo-500/40 active:bg-indigo-500/50 transition-colors cursor-pointer overflow-hidden"
+            title={user?.email ?? 'Profile'}
           >
-            <User className="w-5 h-5 text-indigo-300" />
+            {user?.image ? (
+              <img
+                src={user.image}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : user ? (
+              <span className="text-sm font-semibold text-indigo-200">
+                {userInitial}
+              </span>
+            ) : (
+              <User className="w-5 h-5 text-indigo-300" />
+            )}
           </button>
         </div>
       </header>
@@ -333,12 +408,33 @@ export default function Dashboard() {
                     {nodeCount} node{nodeCount === 1 ? '' : 's'}
                   </span>
                 </div>
-                <button
-                  onClick={() => setCanvasOpen(false)}
-                  className="p-1.5 rounded-md hover:bg-white/10 text-slate-400 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleSaveCanvas}
+                    disabled={nodeCount === 0 || saving}
+                    className="md:hidden p-1.5 rounded-md hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Save canvas"
+                  >
+                    {saving ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setLibraryOpen(true)}
+                    className="md:hidden p-1.5 rounded-md hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors"
+                    title="Open library"
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setCanvasOpen(false)}
+                    className="p-1.5 rounded-md hover:bg-white/10 text-slate-400 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <div className="flex-1 min-h-0">
                 <Canvas />
@@ -353,6 +449,26 @@ export default function Dashboard() {
         onClose={() => setActiveWorkspaceTab(null)}
         onNavigate={setActiveWorkspaceTab}
       />
+
+      <CanvasLibrary
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        sendLoad={sendLoad}
+      />
+
+      <AnimatePresence>
+        {saveMessage && (
+          <motion.div
+            key="save-toast"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-full bg-emerald-500/90 text-white text-sm shadow-lg shadow-emerald-500/30"
+          >
+            {saveMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isSidebarOpen && (
@@ -442,14 +558,28 @@ export default function Dashboard() {
                   className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center">
-                      <User className="w-4 h-4 text-indigo-300" />
+                    <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center overflow-hidden">
+                      {user?.image ? (
+                        <img
+                          src={user.image}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : user ? (
+                        <span className="text-xs font-semibold text-indigo-200">
+                          {userInitial}
+                        </span>
+                      ) : (
+                        <User className="w-4 h-4 text-indigo-300" />
+                      )}
                     </div>
-                    <div className="text-left">
-                      <div className="text-sm font-medium text-slate-200">
-                        Account
+                    <div className="text-left min-w-0">
+                      <div className="text-sm font-medium text-slate-200 truncate">
+                        {user?.name ?? 'Account'}
                       </div>
-                      <div className="text-xs text-slate-500">Pro Plan</div>
+                      <div className="text-xs text-slate-500 truncate">
+                        {user?.email ?? 'Signed in'}
+                      </div>
                     </div>
                   </div>
                   <Settings className="w-4 h-4 text-slate-400" />

@@ -1,7 +1,8 @@
 """Route: /ws/voice — continuous audio in, JSON graph updates out."""
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 
+from app.auth import verify_ws_token
 from app.service.voice import VoiceSession
 
 router = APIRouter()
@@ -9,8 +10,15 @@ router = APIRouter()
 
 @router.websocket("/ws/voice")
 async def voice_ws(websocket: WebSocket) -> None:
+    token = websocket.query_params.get("token")
+    try:
+        user = await verify_ws_token(None, token)
+    except HTTPException as exc:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=exc.detail)
+        return
+
     await websocket.accept()
-    session = VoiceSession(websocket)
+    session = VoiceSession(websocket, user_id=user.id)
     try:
         while True:
             message = await websocket.receive()

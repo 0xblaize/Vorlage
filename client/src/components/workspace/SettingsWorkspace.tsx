@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
+import { authClient } from '../../lib/auth';
 import { X, User, Settings, CreditCard, Receipt, Activity, LogOut, Download, Zap, Moon, Sun, Lock, Database } from 'lucide-react';
 
 export type WorkspaceTab = 'profile' | 'settings' | 'subscription' | 'billing' | 'api' | null;
@@ -12,6 +14,27 @@ interface SettingsWorkspaceProps {
 
 export function SettingsWorkspace({ activeTab, onClose, onNavigate }: SettingsWorkspaceProps) {
   const [themePref, setThemePref] = useState<'dark' | 'light'>('dark');
+  const [signingOut, setSigningOut] = useState(false);
+  const session = authClient.useSession();
+  const user = session.data?.user;
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await authClient.signOut();
+      navigate('/', { replace: true });
+    } catch (err) {
+      console.error('sign out failed', err);
+    } finally {
+      setSigningOut(false);
+    }
+  };
+
+  const [firstName, ...restName] = (user?.name ?? '').split(' ');
+  const lastName = restName.join(' ');
+  const email = user?.email ?? '';
 
   if (!activeTab) return null;
 
@@ -79,12 +102,13 @@ export function SettingsWorkspace({ activeTab, onClose, onNavigate }: SettingsWo
           </div>
 
           <div className="p-4 md:p-6 border-t border-white/5">
-            <button 
-              onClick={() => window.location.href = '/'}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors text-sm font-medium"
+            <button
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <LogOut className="w-5 h-5" />
-              Sign Out
+              {signingOut ? 'Signing out…' : 'Sign Out'}
             </button>
           </div>
         </aside>
@@ -102,32 +126,49 @@ export function SettingsWorkspace({ activeTab, onClose, onNavigate }: SettingsWo
                 </div>
                 <div className="p-8 rounded-3xl bg-white/5 border border-white/10 flex flex-col md:flex-row items-center md:items-start gap-8">
                   <div className="relative">
-                    <div className="w-32 h-32 rounded-full bg-indigo-500/20 flex items-center justify-center border-4 border-[#0a0f18] shadow-2xl">
-                      <User className="w-16 h-16 text-indigo-300" />
+                    <div className="w-32 h-32 rounded-full bg-indigo-500/20 flex items-center justify-center border-4 border-[#0a0f18] shadow-2xl overflow-hidden">
+                      {user?.image ? (
+                        <img
+                          src={user.image}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-4xl font-semibold text-indigo-200">
+                          {(user?.name ?? user?.email ?? '?')
+                            .slice(0, 1)
+                            .toUpperCase()}
+                        </span>
+                      )}
                     </div>
-                    <button className="absolute bottom-0 right-0 w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white border-4 border-[#0a0f18] hover:scale-105 transition-transform">
-                      <Settings className="w-4 h-4" />
-                    </button>
                   </div>
                   <div className="flex-1 w-full space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">First Name</label>
-                        <input type="text" defaultValue="Growth" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-indigo-500 transition-colors" />
+                        <input
+                          type="text"
+                          defaultValue={firstName}
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-indigo-500 transition-colors"
+                        />
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Last Name</label>
-                        <input type="text" defaultValue="Professor" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-indigo-500 transition-colors" />
+                        <input
+                          type="text"
+                          defaultValue={lastName}
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-indigo-500 transition-colors"
+                        />
                       </div>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Email Address</label>
-                      <input type="email" defaultValue="hello@growthprofessor.com" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-slate-200 outline-none focus:border-indigo-500 transition-colors" />
-                    </div>
-                    <div className="pt-4">
-                      <button className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-medium text-sm transition-colors shadow-lg shadow-indigo-500/20">
-                        Save Changes
-                      </button>
+                      <input
+                        type="email"
+                        defaultValue={email}
+                        readOnly
+                        className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-slate-400 outline-none cursor-not-allowed"
+                      />
                     </div>
                   </div>
                 </div>

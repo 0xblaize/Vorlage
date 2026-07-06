@@ -2,21 +2,27 @@ import { useCallback, useEffect, useRef } from 'react';
 import { VoiceSocket } from '../lib/voiceSocket';
 import type { ServerMessage } from '../lib/contract';
 import { useCanvasStore } from '../store/canvasStore';
+import { getAccessToken } from '../lib/auth';
 
-function resolveWsUrl(): string {
+async function resolveWsUrl(): Promise<string> {
   const base = import.meta.env.VITE_WS_URL;
   if (!base) {
     throw new Error(
       'VITE_WS_URL is not set — copy client/.env.example to client/.env.local',
     );
   }
-  return `${base.replace(/\/$/, '')}/ws/voice`;
+  const token = await getAccessToken();
+  if (!token) throw new Error('You are not signed in');
+  const url = new URL(`${base.replace(/\/$/, '')}/ws/voice`);
+  url.searchParams.set('token', token);
+  return url.toString();
 }
 
 export interface VoiceSession {
   start: () => Promise<void>;
   stop: () => Promise<void>;
   sendReset: () => void;
+  sendLoad: (canvasId: number) => boolean;
 }
 
 export function useVoiceSession(): VoiceSession {
@@ -63,19 +69,27 @@ export function useVoiceSession(): VoiceSession {
     setError(null);
     setConnection('connecting');
 
-    const sock = new VoiceSocket(resolveWsUrl(), {
-      onMessage: handleMessage,
-      onOpen: () => setConnection('open'),
-      onClose: () => {
-        setConnection('closed');
-        setRecording(false);
-        socketRef.current = null;
-      },
-      onError: () => {
-        setConnection('error');
-        setError('WebSocket connection failed');
-      },
-    });
+    let sock: VoiceSocket;
+    try {
+      const wsUrl = await resolveWsUrl();
+      sock = new VoiceSocket(wsUrl, {
+        onMessage: handleMessage,
+        onOpen: () => setConnection('open'),
+        onClose: () => {
+          setConnection('closed');
+          setRecording(false);
+          socketRef.current = null;
+        },
+        onError: () => {
+          setConnection('error');
+          setError('WebSocket connection failed');
+        },
+      });
+    } catch (err) {
+      setConnection('error');
+      setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    }
 
     socketRef.current = sock;
 
@@ -97,6 +111,14 @@ export function useVoiceSession(): VoiceSession {
     socketRef.current?.send({ type: 'reset' });
   }, [resetStore]);
 
+  // Ask the live server session to restore a saved canvas. Returns false
+  // if no WS is open — in that case fall back to REST GET + applyGraph.
+  const sendLoad = useCallback((canvasId: number): boolean => {
+    if (!socketRef.current) return false;
+    socketRef.current.send({ type: 'load', canvas_id: canvasId });
+    return true;
+  }, []);
+
   useEffect(() => {
     return () => {
       const sock = socketRef.current;
@@ -105,5 +127,5 @@ export function useVoiceSession(): VoiceSession {
     };
   }, []);
 
-  return { start, stop, sendReset };
+  return { start, stop, sendReset, sendLoad };
 }
