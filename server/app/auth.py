@@ -10,10 +10,12 @@ verification and rely on the signature + `iss`/`sub` checks.
 
 from __future__ import annotations
 
+import ssl
 import time
 from dataclasses import dataclass
 from typing import Any
 
+import certifi
 import httpx
 import jwt
 from fastapi import Depends, HTTPException, Request, status
@@ -25,6 +27,10 @@ from app.config import settings
 _JWKS_CACHE: PyJWKClient | None = None
 _JWKS_LOADED_AT: float = 0.0
 _JWKS_TTL_SECONDS = 60 * 60  # refresh at most once per hour
+
+# macOS python.org builds ship without system CA certs wired up; use certifi's
+# bundle so JWKS fetches don't die with CERTIFICATE_VERIFY_FAILED.
+_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 
 @dataclass(frozen=True)
@@ -44,7 +50,9 @@ def _get_jwks_client() -> PyJWKClient:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="NEON_AUTH_BASE_URL not configured",
         )
-    _JWKS_CACHE = PyJWKClient(settings.neon_auth_jwks_endpoint, cache_keys=True)
+    _JWKS_CACHE = PyJWKClient(
+        settings.neon_auth_jwks_endpoint, cache_keys=True, ssl_context=_SSL_CONTEXT
+    )
     _JWKS_LOADED_AT = now
     return _JWKS_CACHE
 
@@ -104,5 +112,7 @@ async def refresh_jwks() -> None:
     async with httpx.AsyncClient(timeout=10.0) as client:
         # Fetching once populates the underlying cache when PyJWKClient reads it.
         await client.get(settings.neon_auth_jwks_endpoint)
-    _JWKS_CACHE = PyJWKClient(settings.neon_auth_jwks_endpoint, cache_keys=True)
+    _JWKS_CACHE = PyJWKClient(
+        settings.neon_auth_jwks_endpoint, cache_keys=True, ssl_context=_SSL_CONTEXT
+    )
     _JWKS_LOADED_AT = time.time()
