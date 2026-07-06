@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+coverage/
+.DS_Store
+*.log
+
+# local env (Vercel injects env at build time)
+.env
+.env.local
+.env.*.local
