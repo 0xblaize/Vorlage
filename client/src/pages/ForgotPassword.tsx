@@ -15,9 +15,11 @@ export default function ForgotPassword() {
     setError(null);
     setSubmitting(true);
     try {
-      const { error: authError } = await authClient.forgetPassword({
+      // Neon Auth's Better Auth setup ships the email-OTP flavor of
+      // password reset. This sends a one-time code; the reset UI to enter
+      // that code + a new password is a follow-up screen.
+      const { error: authError } = await authClient.forgetPassword.emailOtp({
         email,
-        redirectTo: `${window.location.origin}/login`,
       });
       // For privacy Better Auth doesn't leak whether the email exists — we
       // always show the same confirmation message.

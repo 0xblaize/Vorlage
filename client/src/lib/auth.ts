@@ -7,7 +7,10 @@
 // FastAPI backend as `Authorization: Bearer <token>` (or `?token=` on WS).
 
 import { createInternalNeonAuth } from '@neondatabase/auth';
-import { BetterAuthReactAdapter } from '@neondatabase/auth/react/adapters';
+import {
+  BetterAuthReactAdapter,
+  type BetterAuthReactAdapterInstance,
+} from '@neondatabase/auth/react/adapters';
 
 const url = import.meta.env.VITE_NEON_AUTH_URL;
 
@@ -18,16 +21,18 @@ if (!url) {
   );
 }
 
-const _neon = createInternalNeonAuth(url, {
+// The shipped types don't define NeonAuthConfigInternal, so without the
+// explicit generic T the default (VanillaBetterAuthClient) leaks into the
+// return type and `useSession` shows up as a nanostores atom instead of a
+// React hook. Pinning T here restores the React client shape.
+const _neon = createInternalNeonAuth<BetterAuthReactAdapterInstance>(url, {
   adapter: BetterAuthReactAdapter(),
 });
 
 // Better Auth React client: signIn.email, signUp.email, signOut, useSession…
 export const authClient = _neon.adapter;
 
-// JWT for our own backend. Returns null when signed out. allowAnonymous=false
-// keeps us from silently upgrading anonymous sessions into a valid-looking
-// token — we want the WS/REST caller to know they need to sign in.
+// JWT for our own backend. Returns null when signed out.
 export function getAccessToken(): Promise<string | null> {
-  return _neon.getJWTToken(false);
+  return _neon.getJWTToken();
 }
