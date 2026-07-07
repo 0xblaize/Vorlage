@@ -1,0 +1,16 @@
+# Mirrors pyproject.toml [project].dependencies.
+# Kept in sync so Railway's Railpack (pip-based auto-detect) installs the
+# same set as `uv sync` uses locally and in Docker. Update BOTH files when
+# adding or bumping a dependency.
+
+fastapi>=0.139.0
+openai>=2.44.0
+psycopg[binary]>=3.3.4
+pydantic-settings>=2.14.2
+sqlalchemy>=2.0.51
+uvicorn>=0.50.0
+websockets>=16.0
+httpx>=0.28.0
+pyjwt[crypto]>=2.10.1
+cryptography<49
+certifi
