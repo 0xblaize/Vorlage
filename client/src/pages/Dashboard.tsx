@@ -112,7 +112,35 @@ export default function Dashboard() {
     }
   };
 
-  const handleNewSession = () => {
+  const handleNewSession = async () => {
+    // Auto-save the current canvas (if any) before wiping it, so work isn't
+    // lost when the user starts a fresh session.
+    if (nodeCount > 0) {
+      setSaving(true);
+      setSaveMessage(null);
+      try {
+        const name = `Session ${new Date().toLocaleString()}`;
+        await saveCanvas(name, {
+          nodes,
+          edges,
+          highlight_nodes: highlightIds,
+          speech_payload: speechPayload,
+        });
+        setSaveMessage(`Saved “${name}”`);
+        setTimeout(() => setSaveMessage(null), 2500);
+      } catch (err) {
+        setError(
+          `Couldn't save previous session: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        // Bail out — don't wipe the canvas if we couldn't persist it.
+        setSaving(false);
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
     sendReset();
     setCanvasOpen(false);
     setReferenceImages([]);
