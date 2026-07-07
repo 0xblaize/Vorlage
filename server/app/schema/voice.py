@@ -4,6 +4,7 @@ Every message sent down the WebSocket is a `ServerMessage`. The frontend
 switches on `type` to decide how to update the Zustand store.
 """
 
+from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, Field
