@@ -147,6 +147,11 @@ class VoiceSession:
             )
             return
 
+        print(
+            f"LLM graph: {len(self.graph.nodes)} nodes, "
+            f"{len(self.graph.edges)} edges, "
+            f"speech={self.graph.speech_payload[:80]!r}"
+        )
         await self.websocket.send_text(
             GraphMessage(data=self.graph).model_dump_json()
         )

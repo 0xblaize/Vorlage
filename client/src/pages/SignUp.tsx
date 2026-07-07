@@ -12,6 +12,9 @@ export default function SignUp() {
   const [submitting, setSubmitting] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [resent, setResent] = useState(false);
   const navigate = useNavigate();
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -44,14 +47,65 @@ export default function SignUp() {
     }
   };
 
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setVerifying(true);
+    try {
+      const { error: authError } = await authClient.emailOtp.verifyEmail({
+        email,
+        otp: otp.trim(),
+      });
+      if (authError) {
+        setError(authError.message ?? 'Invalid or expired code');
+        return;
+      }
+      // verifyEmail creates a session on success; fall back to /login if not.
+      const session = await authClient.getSession();
+      navigate(session.data ? '/dashboard' : '/login', { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setError(null);
+    setResent(false);
+    try {
+      const { error: authError } = await authClient.emailOtp.sendVerificationOtp({
+        email,
+        type: 'email-verification',
+      });
+      if (authError) {
+        setError(authError.message ?? 'Could not resend the code');
+        return;
+      }
+      setResent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const handleGoogle = async () => {
     setError(null);
     setOauthLoading(true);
     try {
-      await authClient.signIn.social({
+      const { data, error: authError } = await authClient.signIn.social({
         provider: 'google',
         callbackURL: `${window.location.origin}/dashboard`,
       });
+      if (authError) {
+        setOauthLoading(false);
+        setError(authError.message ?? 'Google sign-in failed');
+        return;
+      }
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setOauthLoading(false);
     } catch (err) {
       setOauthLoading(false);
       setError(err instanceof Error ? err.message : String(err));
@@ -85,18 +139,61 @@ export default function SignUp() {
         </p>
 
         {verificationSent ? (
-          <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 text-sm">
-            Check <span className="font-medium">{email}</span> for a
-            verification link. Once verified, sign in to continue.
-            <div className="mt-4">
-              <Link
-                to="/login"
-                className="text-emerald-300 hover:text-emerald-200 underline"
-              >
-                Go to sign in →
-              </Link>
+          <form onSubmit={handleVerify} className="space-y-5">
+            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 text-sm">
+              We sent a verification code to{' '}
+              <span className="font-medium">{email}</span>. Enter it below to
+              finish creating your account.
             </div>
-          </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                Verification Code
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                maxLength={6}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-slate-500 tracking-[0.5em] text-center text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                placeholder="••••••"
+                autoFocus
+              />
+            </div>
+
+            {error && (
+              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm">
+                {error}
+              </div>
+            )}
+            {resent && !error && (
+              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
+                A new code is on its way.
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={verifying || otp.length < 6}
+              className="w-full py-3.5 rounded-xl font-medium text-slate-900 bg-white hover:bg-slate-100 shadow-lg shadow-white/10 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {verifying && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>{verifying ? 'Verifying…' : 'Verify Email'}</span>
+            </button>
+
+            <div className="text-center text-sm text-slate-400">
+              Didn't get it?{' '}
+              <button
+                type="button"
+                onClick={handleResend}
+                className="text-fuchsia-400 hover:text-fuchsia-300 transition-colors underline"
+              >
+                Resend code
+              </button>
+            </div>
+          </form>
         ) : (
           <>
             <button

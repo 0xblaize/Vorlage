@@ -39,10 +39,20 @@ export default function Login() {
     setError(null);
     setOauthLoading(true);
     try {
-      await authClient.signIn.social({
+      const { data, error: authError } = await authClient.signIn.social({
         provider: 'google',
         callbackURL: `${window.location.origin}${next}`,
       });
+      if (authError) {
+        setOauthLoading(false);
+        setError(authError.message ?? 'Google sign-in failed');
+        return;
+      }
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setOauthLoading(false);
     } catch (err) {
       setOauthLoading(false);
       setError(err instanceof Error ? err.message : String(err));

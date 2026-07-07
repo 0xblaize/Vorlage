@@ -96,6 +96,8 @@ export const FirmamentVisualizer = ({ isListening, theme }: VisualizerProps) => 
         if (p.y < -50) p.y = height + 50;
         if (p.y > height + 50) p.y = -50;
 
+        // Clamp: baseRadius can be as low as 1 and the listening amplitude
+        // is 2, so this would otherwise go negative and ctx.arc() throws.
         p.radius = Math.max(
           0.1,
           p.baseRadius + Math.sin(time + p.phase) * (isListening ? 2 : 0.5),
