@@ -96,7 +96,10 @@ export const FirmamentVisualizer = ({ isListening, theme }: VisualizerProps) => 
         if (p.y < -50) p.y = height + 50;
         if (p.y > height + 50) p.y = -50;
 
-        p.radius = p.baseRadius + Math.sin(time + p.phase) * (isListening ? 2 : 0.5);
+        p.radius = Math.max(
+          0.1,
+          p.baseRadius + Math.sin(time + p.phase) * (isListening ? 2 : 0.5),
+        );
 
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);

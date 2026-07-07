@@ -59,10 +59,18 @@ def _decode(token: str) -> dict[str, Any]:
             algorithms=["ES256", "RS256", "EdDSA"],
             options={"verify_aud": False},
         )
-    except (jwt.PyJWTError, PyJWKClientError) as exc:
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Broad catch: EdDSA + fresh cryptography can raise ValueError/TypeError
+        # from within pyjwt paths (e.g. Ed25519 key construction), which don't
+        # inherit from PyJWTError. Log the class + message so the reason shows
+        # up in the response body instead of a bare 500.
+        detail = f"invalid auth token ({type(exc).__name__}): {exc}"
+        print(f"AUTH _decode failed: {detail}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"invalid auth token: {exc}",
+            detail=detail,
         )
 
 
