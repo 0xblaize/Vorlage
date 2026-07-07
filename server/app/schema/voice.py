@@ -4,22 +4,15 @@ Every message sent down the WebSocket is a `ServerMessage`. The frontend
 switches on `type` to decide how to update the Zustand store.
 """
 
-from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
-class NodeType(str, Enum):
-    """The 6-7 architectural node types the canvas can render."""
-
-    api_gateway = "api_gateway"
-    backend_service = "backend_service"
-    postgres_db = "postgres_db"
-    s3_bucket = "s3_bucket"
-    cache = "cache"
-    queue = "queue"
-    load_balancer = "load_balancer"
+# NodeType is a free-form snake_case slug chosen by the LLM per detected
+# domain — e.g. "api_gateway", "engine", "wheel", "wall", "foundation",
+# "milestone", "task". The canvas renders known types with dedicated icons
+# and falls back to a generic box for unknown types.
+NodeType = str
 
 
 class NodeStatus(str, Enum):

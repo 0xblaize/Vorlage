@@ -12,6 +12,7 @@ A raw non-JSON string is treated as a final transcript (testing shortcut).
 
 import json
 
+import websockets
 from fastapi import WebSocket
 
 from app.config import settings
@@ -55,9 +56,14 @@ class VoiceSession:
                 self.stt = DeepgramStream(self.on_transcript)
                 await self.stt.connect()
             await self.stt.send(chunk)
-        except Exception as exc:  # STT failure must not kill the socket
+        except websockets.ConnectionClosed as exc:
+            # Deepgram idle-closes with 1000 after silence. Reconnect silently
+            # on the next chunk; don't spam the client with a fake error.
+            print(f"STT stream closed (code={exc.code}); will reconnect on next chunk")
+            self.stt = None
+        except Exception as exc:  # real STT failure — surface it, keep the WS alive
             print(f"STT error: {exc}")
-            self.stt = None  # reconnect on the next chunk
+            self.stt = None
             await self.websocket.send_text(
                 ErrorMessage(detail=f"STT error: {exc}").model_dump_json()
             )

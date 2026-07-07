@@ -1,13 +1,10 @@
 // Mirrors server/app/schema/voice.py — keep in sync.
-
-export type NodeType =
-  | 'api_gateway'
-  | 'backend_service'
-  | 'postgres_db'
-  | 's3_bucket'
-  | 'cache'
-  | 'queue'
-  | 'load_balancer';
+//
+// NodeType is a free-form snake_case slug picked by the LLM per detected
+// domain (software, car, building, project, etc.). The renderer maps known
+// types to dedicated icons and falls back to a keyword-based guess, then a
+// generic box.
+export type NodeType = string;
 
 export type NodeStatus = 'solid' | 'ghost';
 
