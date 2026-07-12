@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     def slack_configured(self) -> bool:
         return bool(self.slack_bot_token and self.slack_signing_secret)
 
+    # Web search grounding (Tavily) — used when a transcript references
+    # something needing current/external info (see app/service/search_trigger.py).
+    tavily_api_key: str = ""
+
+    @property
+    def search_configured(self) -> bool:
+        return bool(self.tavily_api_key)
+
     @field_validator("database_url", mode="after")
     @classmethod
     def _normalize_pg_dialect(cls, v: str) -> str:

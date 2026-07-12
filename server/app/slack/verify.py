@@ -42,12 +42,15 @@ async def verify_slack_request(request: Request) -> bytes:
     ).hexdigest()
 
     if not hmac.compare_digest(computed, signature):
-        # Never log the signing secret or the valid signature — only enough
-        # to tell the two failure modes apart (wrong secret vs. body mismatch).
+        # Never log the signing secret or the valid signature — a one-way
+        # fingerprint lets you confirm Railway's value matches Slack's
+        # dashboard yourself without ever pasting the secret anywhere.
+        fingerprint = hashlib.sha256(settings.slack_signing_secret.encode()).hexdigest()[:8]
         print(
             f"Slack verify: signature mismatch (secret configured: "
             f"{bool(settings.slack_signing_secret)}, secret length: "
-            f"{len(settings.slack_signing_secret)}, body length: {len(body)})"
+            f"{len(settings.slack_signing_secret)}, secret fingerprint: {fingerprint}, "
+            f"body length: {len(body)})"
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid Slack signature")
 

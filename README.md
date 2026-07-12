@@ -79,7 +79,7 @@ Create `.env` at the repo root:
 # LLM — Gemini primary, Groq fallback. At least one is required.
 GEMINI_API_KEY=your_gemini_key
 GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-flash-lite
 GROQ_API_KEY=your_groq_key
 GROQ_BASE_URL=https://api.groq.com/openai/v1
 GROQ_MODEL=llama-3.3-70b-versatile

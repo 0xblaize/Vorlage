@@ -19,10 +19,12 @@ _MAX_TOKENS = 4096
 _MAX_TOKENS_RETRY = 8192
 
 
-async def generate_graph(transcript: str, current: GraphUpdate) -> GraphUpdate:
+async def generate_graph(
+    transcript: str, current: GraphUpdate, search_context: str | None = None
+) -> GraphUpdate:
     """Ask the LLM for the full updated canvas state."""
     service = get_service()
-    user_prompt = build_user_prompt(transcript, current.model_dump_json())
+    user_prompt = build_user_prompt(transcript, current.model_dump_json(), search_context)
 
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},

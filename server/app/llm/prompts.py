@@ -112,10 +112,25 @@ Otherwise leave `highlight_nodes` empty and `speech_payload` as `""`.
 """
 
 
-def build_user_prompt(transcript: str, current_graph_json: str) -> str:
-    """Compose the per-request user message."""
+def build_user_prompt(
+    transcript: str, current_graph_json: str, search_context: str | None = None
+) -> str:
+    """Compose the per-request user message.
+
+    ``search_context`` is present when app/service/search_trigger.py detected
+    the transcript needs current/external info and a web search ran — it's a
+    short block of search results to ground the response in, not a directive
+    to change the graph structure.
+    """
+    context_block = ""
+    if search_context:
+        context_block = (
+            f"WEB SEARCH RESULTS (use as grounding, don't fabricate beyond "
+            f"these):\n{search_context}\n\n"
+        )
     return (
         f"CURRENT CANVAS STATE (JSON):\n{current_graph_json}\n\n"
+        f"{context_block}"
         f"USER SAID:\n{transcript}\n\n"
         "Detect the domain, then return the full updated canvas state as JSON."
     )

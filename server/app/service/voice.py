@@ -27,8 +27,10 @@ from app.schema.voice import (
     NodeType,
     TranscriptMessage,
 )
+from app.search.tavily import web_search
 from app.service import session as session_service
 from app.service.ghost import detect_ghost_nodes
+from app.service.search_trigger import needs_web_search
 from app.service.stt import DeepgramStream
 
 # Spoken phrases that mean "start a new project — throw away the current graph."
@@ -196,8 +198,10 @@ class VoiceSession:
             )
             return
 
+        search_context = await self._maybe_search(transcript)
+
         try:
-            self.graph = await generate_graph(transcript, self.graph)
+            self.graph = await generate_graph(transcript, self.graph, search_context)
         except Exception as exc:  # LLM/network failure must not kill the socket
             print(f"LLM error: {exc}")
             await self.websocket.send_text(
@@ -217,6 +221,24 @@ class VoiceSession:
         if self.session_id is not None:
             session_service.update_graph(self.session_id, self.graph)
             await self._maybe_notify_slack_progress()
+
+    async def _maybe_search(self, transcript: str) -> str | None:
+        """Run a web search if the transcript asks for one; None on any failure.
+
+        A failed/skipped search must never block graph generation, so this
+        always degrades to no context rather than raising.
+        """
+        query = needs_web_search(transcript)
+        if not query or not settings.search_configured:
+            return None
+        try:
+            results = await web_search(query)
+        except Exception as exc:  # search outage must not block the session
+            print(f"Web search error: {exc}")
+            return None
+        if not results:
+            return None
+        return "\n".join(f"- {r.title} ({r.url}): {r.snippet[:300]}" for r in results)
 
     async def _maybe_notify_slack_progress(self) -> None:
         """Throttled live ping to the bound Slack thread — only on node-count change."""
