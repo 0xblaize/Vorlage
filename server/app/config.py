@@ -10,10 +10,19 @@ ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(ROOT_ENV), env_file_encoding="utf-8", extra="ignore")
 
-    # LLM (Bad Theory Labs gateway — OpenAI-compatible)
-    llm_api_key: str = ""
-    llm_base_url: str = "https://api.badtheorylabs.com/v1"
-    llm_model: str = "btl-2"
+    # LLM providers — both OpenAI-compatible. Gemini is primary, Groq is the
+    # automatic fallback when Gemini errors (rate limit, timeout, quota, 5xx).
+    gemini_api_key: str = ""
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    gemini_model: str = "gemini-2.5-flash"
+
+    groq_api_key: str = ""
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_model: str = "llama-3.3-70b-versatile"
+
+    @property
+    def llm_configured(self) -> bool:
+        return bool(self.gemini_api_key or self.groq_api_key)
 
     # Speech-to-text (Deepgram)
     deepgram_api_key: str = ""
@@ -34,6 +43,20 @@ class Settings(BaseSettings):
     # is derived as {base}/.well-known/jwks.json unless overridden.
     neon_auth_base_url: str = ""
     neon_auth_jwks_url: str = ""
+
+    # Slack — single hardcoded workspace (no OAuth install flow). Bot token
+    # scoped to chat:write; signing secret verifies inbound slash commands.
+    slack_bot_token: str = ""
+    slack_signing_secret: str = ""
+    slack_default_channel: str = ""
+
+    # Public URL of the deployed frontend, used to build the session link
+    # posted back into Slack (e.g. https://vorlage.vercel.app).
+    app_base_url: str = "http://localhost:3000"
+
+    @property
+    def slack_configured(self) -> bool:
+        return bool(self.slack_bot_token and self.slack_signing_secret)
 
     @field_validator("database_url", mode="after")
     @classmethod

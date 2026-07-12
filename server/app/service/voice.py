@@ -11,6 +11,8 @@ A raw non-JSON string is treated as a final transcript (testing shortcut).
 """
 
 import json
+import re
+import uuid
 
 import websockets
 from fastapi import WebSocket
@@ -25,20 +27,60 @@ from app.schema.voice import (
     NodeType,
     TranscriptMessage,
 )
+from app.service import session as session_service
 from app.service.ghost import detect_ghost_nodes
 from app.service.stt import DeepgramStream
 
+# Spoken phrases that mean "start a new project — throw away the current graph."
+# Matched loosely against the final transcript (lowercased, punctuation stripped).
+# Users won't say it verbatim, so we accept common paraphrases.
+_NEW_PROJECT_PATTERNS = [
+    r"\bthis is (a |an )?(another|new|different) project\b",
+    r"\bnew project\b",
+    r"\bstart (a |over with (a |an )?)?(new|another|different) (project|canvas|one)\b",
+    r"\blet'?s start (over|fresh|a new one)\b",
+    r"\bclear (the )?canvas\b",
+    r"\breset (the )?canvas\b",
+]
+_NEW_PROJECT_RE = re.compile("|".join(_NEW_PROJECT_PATTERNS), re.IGNORECASE)
+
+
+def _is_new_project_command(transcript: str) -> bool:
+    normalised = re.sub(r"[^\w\s']", " ", transcript).strip()
+    return bool(_NEW_PROJECT_RE.search(normalised))
+
 
 class VoiceSession:
-    """One connected client. Owns the STT stream and utterance state."""
+    """One connected client. Owns the STT stream and utterance state.
 
-    def __init__(self, websocket: WebSocket, user_id: str) -> None:
+    ``session_id`` is set when this connection continues a session that
+    already has a DB row — currently only true for Slack-originated sessions
+    (see app/api/slack.py), where the row is created by the slash command
+    handler before the link is ever opened. Plain browser sessions with no
+    ``session_id`` stay in-memory only, matching prior behavior.
+    """
+
+    def __init__(
+        self,
+        websocket: WebSocket,
+        user_id: str,
+        session_id: uuid.UUID | None = None,
+        slack_channel_id: str | None = None,
+        slack_thread_ts: str | None = None,
+        initial_graph: dict | None = None,
+    ) -> None:
         self.websocket = websocket
         self.user_id = user_id
+        self.session_id = session_id
+        self.slack_channel_id = slack_channel_id
+        self.slack_thread_ts = slack_thread_ts
         self.ghosted_types: set[NodeType] = set()
         self.audio_bytes_received = 0
-        self.graph = GraphUpdate()  # current canvas state for this session
+        self.graph = (
+            GraphUpdate.model_validate(initial_graph) if initial_graph else GraphUpdate()
+        )
         self.stt: DeepgramStream | None = None
+        self._last_posted_node_count = len(self.graph.nodes)
 
     async def handle_audio_chunk(self, chunk: bytes) -> None:
         """Forward browser audio to the live Deepgram stream."""
@@ -138,9 +180,19 @@ class VoiceSession:
         # Final transcript: new utterance can re-ghost, then call the LLM.
         self.ghosted_types.clear()
 
-        if not settings.llm_api_key:
+        # Voice command: "this is another project" (and friends) wipes the
+        # canvas so the next utterance starts a fresh graph instead of
+        # extending the previous one.
+        if _is_new_project_command(transcript):
+            self.graph = GraphUpdate()
             await self.websocket.send_text(
-                ErrorMessage(detail="LLM_API_KEY is not configured").model_dump_json()
+                GraphMessage(data=self.graph).model_dump_json()
+            )
+            return
+
+        if not settings.llm_configured:
+            await self.websocket.send_text(
+                ErrorMessage(detail="No LLM provider configured (GEMINI_API_KEY / GROQ_API_KEY)").model_dump_json()
             )
             return
 
@@ -162,8 +214,46 @@ class VoiceSession:
             GraphMessage(data=self.graph).model_dump_json()
         )
 
+        if self.session_id is not None:
+            session_service.update_graph(self.session_id, self.graph)
+            await self._maybe_notify_slack_progress()
+
+    async def _maybe_notify_slack_progress(self) -> None:
+        """Throttled live ping to the bound Slack thread — only on node-count change."""
+        if not self.slack_channel_id or not self.slack_thread_ts:
+            return
+        node_count = len(self.graph.nodes)
+        if node_count == self._last_posted_node_count:
+            return
+        self._last_posted_node_count = node_count
+        from app.slack.client import post_message  # avoid import cycle at module load
+
+        try:
+            await post_message(
+                self.slack_channel_id,
+                self.slack_thread_ts,
+                f"🧩 architecture growing — {node_count} components so far",
+            )
+        except Exception as exc:  # Slack hiccups must not interrupt the session
+            print(f"Slack progress ping failed: {exc}")
+
     async def close(self) -> None:
         print("Client disconnected")
         if self.stt is not None:
             await self.stt.close()
             self.stt = None
+        if self.session_id is not None:
+            session_service.mark_ended(self.session_id)
+            await self._maybe_post_slack_summary()
+
+    async def _maybe_post_slack_summary(self) -> None:
+        if not self.slack_channel_id or not self.slack_thread_ts:
+            return
+        from app.slack.summary_post import post_session_summary  # avoid import cycle
+
+        try:
+            await post_session_summary(
+                self.slack_channel_id, self.slack_thread_ts, self.graph
+            )
+        except Exception as exc:  # summary generation/posting must not crash close()
+            print(f"Slack summary post failed: {exc}")

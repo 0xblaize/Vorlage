@@ -11,7 +11,7 @@ from app.config import settings
 async def lifespan(app: FastAPI):
     # Create tables if the DB is reachable; canvas routes 503 otherwise.
     try:
-        from app.model import canvas  # noqa: F401 — register models
+        from app.model import canvas, session  # noqa: F401 — register models
         from app.model.base import Base, engine
 
         Base.metadata.create_all(engine)

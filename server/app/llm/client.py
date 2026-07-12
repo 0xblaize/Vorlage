@@ -1,4 +1,4 @@
-"""LLM call via the Bad Theory Labs gateway (OpenAI-compatible).
+"""LLM call via LLMService (Gemini primary, Groq fallback).
 
 Transcript + current canvas -> GraphUpdate. We use JSON mode and validate
 the raw text with Pydantic. If the first response is truncated
@@ -6,11 +6,10 @@ the raw text with Pydantic. If the first response is truncated
 with a bigger token budget and a corrective instruction.
 """
 
-from openai import AsyncOpenAI
 from pydantic import ValidationError
 
-from app.config import settings
 from app.llm.prompts import SYSTEM_PROMPT, build_user_prompt
+from app.llm.service import LLMService, get_service
 from app.schema.voice import GraphUpdate
 
 # The graph is returned in full every turn. As the canvas grows the JSON
@@ -19,22 +18,10 @@ from app.schema.voice import GraphUpdate
 _MAX_TOKENS = 4096
 _MAX_TOKENS_RETRY = 8192
 
-_client: AsyncOpenAI | None = None
-
-
-def get_client() -> AsyncOpenAI:
-    global _client
-    if _client is None:
-        _client = AsyncOpenAI(
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
-        )
-    return _client
-
 
 async def generate_graph(transcript: str, current: GraphUpdate) -> GraphUpdate:
     """Ask the LLM for the full updated canvas state."""
-    client = get_client()
+    service = get_service()
     user_prompt = build_user_prompt(transcript, current.model_dump_json())
 
     messages: list[dict] = [
@@ -42,13 +29,7 @@ async def generate_graph(transcript: str, current: GraphUpdate) -> GraphUpdate:
         {"role": "user", "content": user_prompt},
     ]
 
-    completion = await client.chat.completions.create(
-        model=settings.llm_model,
-        messages=messages,
-        response_format={"type": "json_object"},
-        temperature=0.2,
-        max_tokens=_MAX_TOKENS,
-    )
+    completion = await service.complete(messages, max_tokens=_MAX_TOKENS, temperature=0.2)
     raw = completion.choices[0].message.content or ""
     finish_reason = completion.choices[0].finish_reason
 
@@ -62,7 +43,7 @@ async def generate_graph(transcript: str, current: GraphUpdate) -> GraphUpdate:
                 f"{first_err}\n\n"
                 "Return ONLY valid JSON matching the schema. No prose, no markdown."
             )
-            return await _retry(client, messages, raw, correction)
+            return await _retry(service, messages, raw, correction)
 
     # Truncated: don't waste tokens quoting the broken JSON back, just
     # tell the model to be more concise and retry with a bigger budget.
@@ -71,11 +52,11 @@ async def generate_graph(transcript: str, current: GraphUpdate) -> GraphUpdate:
         "Return the SAME graph but keep labels short and avoid any repetition. "
         "Output ONLY valid JSON matching the schema. No prose, no markdown."
     )
-    return await _retry(client, messages, raw, correction)
+    return await _retry(service, messages, raw, correction)
 
 
 async def _retry(
-    client: AsyncOpenAI,
+    service: LLMService,
     messages: list[dict],
     prior_raw: str,
     correction: str,
@@ -84,12 +65,6 @@ async def _retry(
         {"role": "assistant", "content": prior_raw},
         {"role": "user", "content": correction},
     ]
-    retry = await client.chat.completions.create(
-        model=settings.llm_model,
-        messages=retry_messages,
-        response_format={"type": "json_object"},
-        temperature=0.0,
-        max_tokens=_MAX_TOKENS_RETRY,
-    )
+    retry = await service.complete(retry_messages, max_tokens=_MAX_TOKENS_RETRY, temperature=0.0)
     raw_retry = retry.choices[0].message.content or ""
     return GraphUpdate.model_validate_json(raw_retry)

@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import SignUp from './pages/SignUp';
 import ForgotPassword from './pages/ForgotPassword';
 import Dashboard from './pages/Dashboard';
+import Session from './pages/Session';
 import { RequireAuth } from './components/auth/RequireAuth';
 
 function App() {
@@ -18,6 +19,14 @@ function App() {
         element={
           <RequireAuth>
             <Dashboard />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/session/:sessionId"
+        element={
+          <RequireAuth>
+            <Session />
           </RequireAuth>
         }
       />

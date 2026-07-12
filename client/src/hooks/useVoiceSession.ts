@@ -4,7 +4,7 @@ import type { ServerMessage } from '../lib/contract';
 import { useCanvasStore } from '../store/canvasStore';
 import { getAccessToken } from '../lib/auth';
 
-async function resolveWsUrl(): Promise<string> {
+async function resolveWsUrl(sessionId?: string): Promise<string> {
   const base = import.meta.env.VITE_WS_URL;
   if (!base) {
     throw new Error(
@@ -15,6 +15,9 @@ async function resolveWsUrl(): Promise<string> {
   if (!token) throw new Error('You are not signed in');
   const url = new URL(`${base.replace(/\/$/, '')}/ws/voice`);
   url.searchParams.set('token', token);
+  // Present when continuing a Slack-originated session (see /session/:id) —
+  // the server looks up its Slack channel/thread binding and prior graph.
+  if (sessionId) url.searchParams.set('session_id', sessionId);
   return url.toString();
 }
 
@@ -25,7 +28,7 @@ export interface VoiceSession {
   sendLoad: (canvasId: number) => boolean;
 }
 
-export function useVoiceSession(): VoiceSession {
+export function useVoiceSession(sessionId?: string): VoiceSession {
   const socketRef = useRef<VoiceSocket | null>(null);
 
   const applyGraph = useCanvasStore((s) => s.applyGraph);
@@ -71,7 +74,7 @@ export function useVoiceSession(): VoiceSession {
 
     let sock: VoiceSocket;
     try {
-      const wsUrl = await resolveWsUrl();
+      const wsUrl = await resolveWsUrl(sessionId);
       sock = new VoiceSocket(wsUrl, {
         onMessage: handleMessage,
         onOpen: () => setConnection('open'),
@@ -104,7 +107,7 @@ export function useVoiceSession(): VoiceSession {
       await sock.stop();
       throw err;
     }
-  }, [handleMessage, setConnection, setError, setRecording]);
+  }, [handleMessage, setConnection, setError, setRecording, sessionId]);
 
   const sendReset = useCallback(() => {
     resetStore();
