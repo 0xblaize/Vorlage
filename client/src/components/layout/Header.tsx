@@ -14,8 +14,11 @@ export const Header = ({ theme, setTheme, isIslandHovered, setIsIslandHovered }:
     <nav className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between relative z-50">
       {/* Left: Brand - Tighter typography */}
       <div className="flex items-center gap-8">
-        <div className={`text-2xl font-sans font-black tracking-tighter transition-colors duration-700 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
-          VORLAGE.
+        <div className="flex items-center gap-2.5">
+          <img src="/logo.jpg" alt="Vorlage" className="w-8 h-8 rounded-lg object-cover" />
+          <div className={`text-2xl font-sans font-black tracking-tighter transition-colors duration-700 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+            VORLAGE.
+          </div>
         </div>
       </div>
 
