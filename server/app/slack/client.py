@@ -40,3 +40,16 @@ async def post_message(
 async def start_thread(channel: str, text: str) -> str:
     """Post the first message of a new thread. Returns its ts (== thread_ts)."""
     return await post_message(channel, None, text)
+
+
+async def post_to_response_url(response_url: str, text: str) -> None:
+    """Deliver a delayed slash-command reply via Slack's response_url.
+
+    Unlike chat.postMessage this takes no bot token — response_url is itself
+    the credential — and it's valid for up to 30 minutes, so slash command
+    handlers that need to do real work should ack immediately and send the
+    real reply this way instead of racing Slack's 3-second timeout.
+    """
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(response_url, json={"response_type": "in_channel", "text": text})
+    resp.raise_for_status()
