@@ -97,6 +97,6 @@ Full schema in `server/app/schema/voice.py` and mirrored in `client/src/lib/cont
 
 ## Contributors
 
-- **Alawode Christopher ** ([@0xblaize](https://github.com/0xblaize)) — AI Pipeline Architect
+- **Christopher** ([@0xblaize](https://github.com/0xblaize)) — AI Pipeline Architect
 - **Sam** ([@yestuue](https://github.com/yestuue)) — Frontend Developer
 - **Joshua** ([@Webprowale](https://github.com/Webprowale)) — Backend Developer
