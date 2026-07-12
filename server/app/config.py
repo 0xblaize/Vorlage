@@ -14,7 +14,10 @@ class Settings(BaseSettings):
     # automatic fallback when Gemini errors (rate limit, timeout, quota, 5xx).
     gemini_api_key: str = ""
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
-    gemini_model: str = "gemini-2.5-flash"
+    # gemini-2.5-flash returns 404 "no longer available to new users" for some
+    # accounts as of July 2026 even though Google's docs list an Oct 2026
+    # retirement — flash-lite is the current stable alternative.
+    gemini_model: str = "gemini-2.5-flash-lite"
 
     groq_api_key: str = ""
     groq_base_url: str = "https://api.groq.com/openai/v1"

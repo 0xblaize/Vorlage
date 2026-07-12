@@ -27,9 +27,12 @@ async def verify_slack_request(request: Request) -> bytes:
     timestamp = request.headers.get("X-Slack-Request-Timestamp")
     signature = request.headers.get("X-Slack-Signature")
     if not timestamp or not signature:
+        print(f"Slack verify: missing headers (timestamp={timestamp!r}, signature={signature!r})")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing Slack signature headers")
 
-    if abs(time.time() - int(timestamp)) > _MAX_CLOCK_SKEW_SECONDS:
+    skew = abs(time.time() - int(timestamp))
+    if skew > _MAX_CLOCK_SKEW_SECONDS:
+        print(f"Slack verify: stale timestamp (skew={skew:.0f}s, max={_MAX_CLOCK_SKEW_SECONDS}s)")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="stale Slack request timestamp")
 
     body = await request.body()
@@ -39,6 +42,13 @@ async def verify_slack_request(request: Request) -> bytes:
     ).hexdigest()
 
     if not hmac.compare_digest(computed, signature):
+        # Never log the signing secret or the valid signature — only enough
+        # to tell the two failure modes apart (wrong secret vs. body mismatch).
+        print(
+            f"Slack verify: signature mismatch (secret configured: "
+            f"{bool(settings.slack_signing_secret)}, secret length: "
+            f"{len(settings.slack_signing_secret)}, body length: {len(body)})"
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid Slack signature")
 
     return body
