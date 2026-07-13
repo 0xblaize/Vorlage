@@ -1,26 +1,110 @@
 # Vorlage
 
-Vorlage is an AI systems architect that joins your engineering conversations
-and builds a living architecture diagram **while you're still talking** —
-not after the meeting, not from notes.
+Vorlage is a voice-first AI Systems Architect built for Slack. It joins
+engineering conversations, listens in real time, and continuously builds
+living software architecture while teams are still designing systems.
+Instead of losing architecture decisions inside meetings, Vorlage
+automatically produces diagrams, documentation, implementation plans, and
+design rationale before the conversation ends.
 
 Speak — *"add a Postgres database behind the API, with a cache in front of
 it"* — and nodes and edges appear on a canvas in real time, first as
 instant "ghost" previews, then confirmed by the LLM with full spatial
 reasoning.
 
-## How it works
+## Voice Architecture Pipeline
 
 1. **Voice capture** — the browser streams 250ms audio chunks over a
    WebSocket using `MediaRecorder`.
 2. **Speech-to-text** — the FastAPI backend forwards each chunk to Deepgram
    (`nova-3`) for interim + final transcripts.
 3. **Ghost nodes** — a keyword detector fires optimistic node previews on
-   partial transcripts, before the LLM has replied — the "wow" moment.
+   partial transcripts, before the LLM has replied. They exist to provide
+   immediate visual feedback while the language model completes its
+   reasoning, so the experience feels collaborative rather than like
+   waiting on AI — the "wow" moment.
 4. **Architecture generation** — final transcripts go to an LLM (current
    canvas state + transcript in, full updated graph out as strict JSON).
 5. **Canvas rendering** — React Flow + Zustand render the update instantly,
    snapping ghosts to solid nodes and drawing edges.
+
+## Slack Collaboration Workflow
+
+```
+Slack
+  ↓
+/vorlage
+  ↓
+Voice Session Starts
+  ↓
+Engineers Discuss Architecture
+  ↓
+Deepgram Streams Speech
+  ↓
+Ghost Nodes Appear
+  ↓
+LLM Updates Architecture
+  ↓
+Diagram Evolves Live
+  ↓
+Meeting Ends
+  ↓
+Slack Thread Receives
+  • Architecture Diagram
+  • Documentation
+  • Mermaid Export
+  • Action Items
+```
+
+## System Architecture
+
+```mermaid
+graph TD
+    Slack --> FastAPI
+    FastAPI --> Deepgram
+    Deepgram --> LLM
+    LLM --> ArchitectureEngine[Architecture Engine]
+    ArchitectureEngine --> ReactFlow[React Flow]
+    ArchitectureEngine --> PostgreSQL
+    ArchitectureEngine --> Slack
+```
+
+## Why Slack?
+
+Engineering decisions happen in conversations. Those conversations already
+happen in Slack.
+
+Vorlage doesn't replace existing engineering workflows — it participates
+in them. By embedding directly into Slack, Vorlage transforms technical
+discussions into persistent architecture artifacts without requiring
+engineers to change how they work.
+
+## Hackathon Features
+
+- Slack-native workflow
+- Voice-first architecture generation
+- Live ghost node rendering
+- Real-time architecture updates
+- Automatic documentation
+- Mermaid export
+- Architecture version history
+- Gemini + Groq failover
+- Persistent Postgres sessions
+
+## Demo Scenario
+
+1. A team starts a new backend design discussion in Slack.
+2. They launch Vorlage with `/vorlage`.
+3. Engineers begin speaking.
+4. Ghost nodes appear instantly.
+5. The architecture grows in real time.
+6. The meeting ends.
+7. Slack automatically receives:
+   - Architecture Diagram
+   - Mermaid Export
+   - Documentation
+   - Security Recommendations
+   - Action Items
 
 ### LLM provider fallback
 
@@ -33,8 +117,20 @@ required. Configure either or both; the app works with just one.
 ### Slack integration
 
 Slack bots can't listen to live audio in a channel or huddle, so Slack is
-the entry point and collaboration layer around the voice-first core, not a
-replacement for it:
+the collaboration layer around the voice-first core, not a replacement for
+it. Instead of documenting architecture after a meeting, teams simply start
+a Vorlage session from Slack.
+
+During the session:
+
+- Voice is streamed to the backend.
+- Ghost nodes appear immediately.
+- The architecture grows in real time.
+- Progress is reflected back into the Slack thread.
+- When the meeting ends, the complete architecture package is posted
+  automatically.
+
+In detail:
 
 - `/vorlage` in any channel starts a session, opens a thread, and replies
   with a link to the live voice/canvas page (`/session/:id`).
