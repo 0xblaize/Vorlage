@@ -37,6 +37,19 @@ async def post_message(
     return data["ts"]
 
 
+async def update_message(channel: str, ts: str, text: str) -> None:
+    """Edit an existing message in place (chat.update)."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(
+            f"{_BASE_URL}/chat.update",
+            headers={"Authorization": f"Bearer {settings.slack_bot_token}"},
+            json={"channel": channel, "ts": ts, "text": text},
+        )
+    data = resp.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"Slack chat.update failed: {data.get('error')}")
+
+
 async def start_thread(channel: str, text: str) -> str:
     """Post the first message of a new thread. Returns its ts (== thread_ts)."""
     return await post_message(channel, None, text)

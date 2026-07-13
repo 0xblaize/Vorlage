@@ -1,10 +1,12 @@
-"""Provider-agnostic LLM entry point: Gemini first, Groq on failure.
+"""Provider-agnostic LLM entry point: races every configured provider and
+returns whichever responds first.
 
 Call sites never talk to a specific provider — they call `LLMService.complete`
 and get back the first successful response. A provider without an API key
 configured is skipped rather than attempted.
 """
 
+import asyncio
 import logging
 
 import openai
@@ -34,19 +36,39 @@ class LLMService:
         max_tokens: int,
         temperature: float,
     ) -> ChatCompletion:
+        """Race every provider concurrently; return the first success.
+
+        Trades doubled per-turn LLM cost for consistently using whichever
+        provider is fastest to respond, rather than always paying the
+        primary provider's latency before falling back.
+        """
+        tasks = {
+            asyncio.create_task(
+                provider.complete(messages, max_tokens=max_tokens, temperature=temperature)
+            ): provider
+            for provider in self.providers
+        }
+
         last_error: Exception | None = None
-        for provider in self.providers:
-            try:
-                result = await provider.complete(
-                    messages, max_tokens=max_tokens, temperature=temperature
-                )
-                if last_error is not None:
-                    logger.info("llm: %s served request after fallback", provider.name)
-                return result
-            except _FAILOVER_ERRORS as exc:
-                logger.warning("llm: %s failed (%s), trying next provider", provider.name, exc)
-                last_error = exc
-        raise last_error  # type: ignore[misc]
+        try:
+            while tasks:
+                done, _pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    provider = tasks.pop(task)
+                    try:
+                        result = task.result()
+                    except _FAILOVER_ERRORS as exc:
+                        logger.warning("llm: %s failed (%s), waiting on the rest", provider.name, exc)
+                        last_error = exc
+                        continue
+                    logger.info("llm: %s won the race", provider.name)
+                    for loser in tasks:
+                        loser.cancel()
+                    return result
+            raise last_error  # type: ignore[misc]
+        finally:
+            for task in tasks:
+                task.cancel()
 
 
 def _build_providers() -> list[LLMProvider]:

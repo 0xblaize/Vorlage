@@ -83,6 +83,8 @@ class VoiceSession:
         )
         self.stt: DeepgramStream | None = None
         self._last_posted_node_count = len(self.graph.nodes)
+        self.slack_status_ts: str | None = None
+        self.slack_status_state: str | None = None
 
     async def handle_audio_chunk(self, chunk: bytes) -> None:
         """Forward browser audio to the live Deepgram stream."""
@@ -171,6 +173,8 @@ class VoiceSession:
         )
 
         if not is_final:
+            # Mirror the browser's "Listening" indicator in the Slack thread.
+            await self._update_slack_status("listening", "🎤 Listening…")
             # Phase 3: fire instant ghost nodes off partial transcripts.
             ghosts = detect_ghost_nodes(transcript, self.ghosted_types)
             if ghosts:
@@ -198,12 +202,17 @@ class VoiceSession:
             )
             return
 
+        # Mirror the browser's "Processing" indicator now that speech has
+        # stopped and we're about to call the LLM.
+        await self._update_slack_status("processing", "⚙️ Processing…")
+
         search_context = await self._maybe_search(transcript)
 
         try:
             self.graph = await generate_graph(transcript, self.graph, search_context)
         except Exception as exc:  # LLM/network failure must not kill the socket
             print(f"LLM error: {exc}")
+            await self._update_slack_status("error", f"⚠️ {exc}")
             await self.websocket.send_text(
                 ErrorMessage(detail=f"LLM error: {exc}").model_dump_json()
             )
@@ -241,23 +250,43 @@ class VoiceSession:
         return "\n".join(f"- {r.title} ({r.url}): {r.snippet[:300]}" for r in results)
 
     async def _maybe_notify_slack_progress(self) -> None:
-        """Throttled live ping to the bound Slack thread — only on node-count change."""
+        """Throttled live status update to the bound Slack thread — only on node-count change."""
         if not self.slack_channel_id or not self.slack_thread_ts:
             return
         node_count = len(self.graph.nodes)
         if node_count == self._last_posted_node_count:
             return
         self._last_posted_node_count = node_count
-        from app.slack.client import post_message  # avoid import cycle at module load
+        await self._update_slack_status(
+            "graph", f"🧩 architecture growing — {node_count} components so far"
+        )
+
+    async def _update_slack_status(self, state: str, text: str) -> None:
+        """Edit a single live status message in the Slack thread in place.
+
+        Mirrors the browser's Listening/Processing indicator instead of
+        spamming the thread with a new message per state change. ``state``
+        is a dedupe key (e.g. repeated "listening" calls on every interim
+        transcript are no-ops); Slack hiccups here must never interrupt the
+        voice session.
+        """
+        if not self.slack_channel_id or not self.slack_thread_ts:
+            return
+        if state == self.slack_status_state:
+            return
+
+        from app.slack.client import post_message, update_message  # avoid import cycle
 
         try:
-            await post_message(
-                self.slack_channel_id,
-                self.slack_thread_ts,
-                f"🧩 architecture growing — {node_count} components so far",
-            )
+            if self.slack_status_ts is None:
+                self.slack_status_ts = await post_message(
+                    self.slack_channel_id, self.slack_thread_ts, text
+                )
+            else:
+                await update_message(self.slack_channel_id, self.slack_status_ts, text)
+            self.slack_status_state = state
         except Exception as exc:  # Slack hiccups must not interrupt the session
-            print(f"Slack progress ping failed: {exc}")
+            print(f"Slack status update failed: {exc}")
 
     async def close(self) -> None:
         print("Client disconnected")
@@ -266,6 +295,7 @@ class VoiceSession:
             self.stt = None
         if self.session_id is not None:
             session_service.mark_ended(self.session_id)
+            await self._update_slack_status("complete", "✅ Architecture complete")
             await self._maybe_post_slack_summary()
 
     async def _maybe_post_slack_summary(self) -> None:
